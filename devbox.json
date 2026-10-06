@@ -1,0 +1,16 @@
+{
+  "packages": [
+    "rustup@latest",
+    "protobuf@latest",
+    "grpcurl@latest"
+  ],
+  "shell": {
+    "scripts": {
+      "db": "docker compose up -d --wait",
+      "start": "cargo run --locked",
+      "check": "cargo fmt --all -- --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked",
+      "integration": "cargo test --locked --test integration -- --ignored",
+      "build": "cargo build --locked --release"
+    }
+  }
+}
