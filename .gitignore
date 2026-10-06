@@ -1,0 +1,5 @@
+/target/
+/.devbox/
+/data/
+.env
+codedb.snapshot
