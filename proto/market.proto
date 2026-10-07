@@ -1,0 +1,50 @@
+syntax = "proto3";
+package market.v1;
+
+service MarketData {
+  rpc Health(Empty) returns (HealthReply);
+  rpc Ingest(IngestRequest) returns (IngestReply);
+  rpc ListSymbols(Empty) returns (SymbolsReply);
+  rpc GetLatest(SymbolRequest) returns (Snapshot);
+  rpc GetSnapshots(RangeRequest) returns (SnapshotsReply);
+  rpc GetDepth(DepthRequest) returns (Snapshot);
+  rpc GetSummary(SymbolRequest) returns (SummaryReply);
+  rpc GetRange(SymbolRequest) returns (RangeReply);
+  rpc GetMidPrices(RangeRequest) returns (MidPricesReply);
+}
+
+message Empty {}
+message HealthReply { string status = 1; }
+message Level { uint64 price = 1; uint64 quantity = 2; }
+message Snapshot {
+  string symbol = 1;
+  uint64 timestamp_ms = 2;
+  uint64 sequence = 3;
+  repeated Level bids = 4;
+  repeated Level asks = 5;
+}
+message IngestRequest { repeated Snapshot snapshots = 1; }
+message IngestReply { uint64 accepted = 1; }
+message SymbolsReply { repeated string symbols = 1; }
+message SymbolRequest { string symbol = 1; }
+message RangeRequest {
+  string symbol = 1;
+  uint64 from_ms = 2;
+  uint64 to_ms = 3;
+  uint32 limit = 4;
+}
+message SnapshotsReply { repeated Snapshot snapshots = 1; bool truncated = 2; }
+message DepthRequest { string symbol = 1; uint32 levels = 2; }
+message SummaryReply {
+  uint64 timestamp_ms = 1;
+  uint64 best_bid = 2;
+  uint64 best_ask = 3;
+  uint64 spread = 4;
+  double mid_price = 5;
+  uint64 bid_quantity = 6;
+  uint64 ask_quantity = 7;
+  double imbalance = 8;
+}
+message RangeReply { uint64 first_ms = 1; uint64 last_ms = 2; uint64 count = 3; }
+message MidPricePoint { uint64 timestamp_ms = 1; uint64 sequence = 2; double price = 3; }
+message MidPricesReply { repeated MidPricePoint points = 1; bool truncated = 2; }
