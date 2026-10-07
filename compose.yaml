@@ -1,0 +1,22 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8
+    ports:
+      - "127.0.0.1:8123:8123"
+    environment:
+      CLICKHOUSE_DB: market
+      CLICKHOUSE_USER: market
+      CLICKHOUSE_PASSWORD: local-market-password
+    volumes:
+      - market-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --host \"$$(hostname -i)\" --user market --password local-market-password --database market --query 'SELECT 1'"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+volumes:
+  market-data:
