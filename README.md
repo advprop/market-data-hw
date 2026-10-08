@@ -34,3 +34,42 @@
 | 9 | Запускать и проверять проект стандартными командами. | Devbox, Cargo и Docker Compose. Проверки запускаются одной командой и в GitHub Actions. |
 | 10 | Записывать ошибки и корректно завершать работу. | Ошибки пишутся в лог через `tracing`. `RUST_LOG` задаёт уровень логов. Ctrl+C завершает работу обоих серверов. |
 
+## Как устроен сервер
+
+Сервер работает на Tokio. Tonic и Prost отвечают за gRPC, Axum за HTTP и SVG. Для ClickHouse используется официальный Rust клиент. Сама база работает в контейнере, сервер обращается к ней по HTTP.
+
+Обработчики разделяют `Arc<AppState>` с клиентом базы и семафором. Уровни стакана проходят через `BTreeMap`: это позволяет найти повторные цены и сразу получить нужный порядок. Bids сортируются по убыванию цены, asks по возрастанию. В базу уровни отправляются как `Vec`. Повторные ключи снимков внутри пакета тоже проверяются до записи.
+
+Методы и сообщения описаны в [proto/market.proto](proto/market.proto). Проверять API можно через `grpcurl`.
+
+```mermaid
+flowchart LR
+    Source[Поставщик снимков L2] -->|gRPC Ingest с токеном| Server[Сервер Rust]
+    Client[Будущий клиент] -->|gRPC запросы| Server
+    Server -->|Чтение и запись по HTTP| Database[(ClickHouse)]
+    Database --- Volume[Постоянный Docker том]
+    Browser[Просмотр графика] -->|HTTP GET| Plot[Axum]
+    Plot -->|История снимков| Database
+    Plot -->|SVG| Browser
+    Server --- Shared[Arc и лимит 32 операций]
+```
+
+```mermaid
+sequenceDiagram
+    participant P as Поставщик
+    participant S as Сервер
+    participant D as ClickHouse
+    participant C as Клиент
+    P->>S: Пакет полных снимков и токен
+    S->>S: Проверка токена, уровней и ключей
+    S->>S: BTreeMap сортирует bids и asks
+    S->>D: INSERT снимков
+    D-->>S: Запись завершена
+    S-->>P: Число принятых снимков
+    C->>S: GetSummary по символу
+    S->>D: Последний снимок с FINAL
+    D-->>S: Bids и asks
+    S->>S: Расчёт спреда, mid price и imbalance
+    S-->>C: Показатели стакана
+```
+
