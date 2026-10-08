@@ -1,0 +1,31 @@
+{
+  "snapshots": [
+    {
+      "symbol": "BTC-USDT",
+      "timestampMs": "1791540000000",
+      "sequence": "1",
+      "bids": [
+        {"price": "62000000000", "quantity": "1500000"},
+        {"price": "61999000000", "quantity": "2000000"}
+      ],
+      "asks": [
+        {"price": "62001000000", "quantity": "1000000"},
+        {"price": "62002000000", "quantity": "3000000"}
+      ]
+    },
+    {
+      "symbol": "BTC-USDT",
+      "timestampMs": "1791540001000",
+      "sequence": "2",
+      "bids": [{"price": "62003000000", "quantity": "2000000"}],
+      "asks": [{"price": "62005000000", "quantity": "1000000"}]
+    },
+    {
+      "symbol": "BTC-USDT",
+      "timestampMs": "1791540002000",
+      "sequence": "3",
+      "bids": [{"price": "62001000000", "quantity": "3000000"}],
+      "asks": [{"price": "62003000000", "quantity": "2000000"}]
+    }
+  ]
+}
