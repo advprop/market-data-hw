@@ -73,3 +73,36 @@ sequenceDiagram
     S-->>C: Показатели стакана
 ```
 
+## Запуск
+
+Для запуска нужны Devbox, Nix и запущенный Docker. Rustup, protoc и grpcurl установит Devbox.
+
+```sh
+devbox install
+devbox run db
+export WRITE_TOKEN=local-homework-token
+devbox run start
+```
+
+Если Rust 1.92.0 и protoc уже установлены:
+
+```sh
+docker compose up -d --wait
+export WRITE_TOKEN=local-homework-token
+cargo run
+```
+
+При запуске сервер создаёт таблицу, если её ещё нет. Пример настроек лежит в [.env.example](.env.example). Их нужно передать через переменные окружения: сам файл `.env` сервер не читает.
+
+| Переменная | Значение по умолчанию |
+|---|---|
+| `WRITE_TOKEN` | Нужно задать, минимум 16 байт |
+| `CLICKHOUSE_URL` | `http://127.0.0.1:8123` |
+| `CLICKHOUSE_DATABASE` | `market` |
+| `CLICKHOUSE_USER` | `market` |
+| `CLICKHOUSE_PASSWORD` | `local-market-password` |
+| `GRPC_ADDR` | `127.0.0.1:50051` |
+| `HTTP_ADDR` | `127.0.0.1:3000` |
+| `CLIENT_ORIGIN` | `http://localhost:5173` |
+| `RUST_LOG` | `info` |
+
