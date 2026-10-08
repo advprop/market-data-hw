@@ -141,3 +141,24 @@ grpcurl -plaintext -import-path proto -proto market.proto -d '{"symbol":"BTC-USD
 
 После загрузки примера откройте [график BTC-USDT](http://localhost:3000/v1/plot/BTC-USDT?from_ms=1791540000000&to_ms=1791540003000). Для проверки базы через HTTP откройте [health](http://localhost:3000/health).
 
+### Что получится
+
+В последнем снимке лучший bid равен `62001`, его объём `3`. Лучший ask равен `62003`, его объём `2`. Поэтому показатели будут такими:
+
+| Показатель | Значение |
+|---|---|
+| Спред | `62003 − 62001 = 2` |
+| Mid price | `(62001 + 62003) / 2 = 62002` |
+| Imbalance | `(3 − 2) / (3 + 2) = 0.2` |
+| История mid price | `62000.5 → 62004 → 62002` |
+
+Этот график получен от сервера после загрузки примера:
+
+![История mid price BTC-USDT](docs/mid-price.svg)
+
+[SVG файл](docs/mid-price.svg). Сохранить график локально:
+
+```sh
+curl --fail 'http://localhost:3000/v1/plot/BTC-USDT?from_ms=1791540000000&to_ms=1791540003000' -o /tmp/mid-price.svg
+```
+
