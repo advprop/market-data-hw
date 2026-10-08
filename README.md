@@ -106,3 +106,38 @@ cargo run
 | `CLIENT_ORIGIN` | `http://localhost:5173` |
 | `RUST_LOG` | `info` |
 
+## Пример работы
+
+Откройте второй терминал и выполните `devbox shell`. Затем загрузите три снимка из [examples/snapshots.json](examples/snapshots.json):
+
+```sh
+grpcurl -plaintext -import-path proto -proto market.proto -H 'x-write-token: local-homework-token' -d @ localhost:50051 market.v1.MarketData/Ingest < examples/snapshots.json
+```
+
+Проверка подключения к базе и список инструментов:
+
+```sh
+grpcurl -plaintext -import-path proto -proto market.proto -d '{}' localhost:50051 market.v1.MarketData/Health
+grpcurl -plaintext -import-path proto -proto market.proto -d '{}' localhost:50051 market.v1.MarketData/ListSymbols
+```
+
+Последний стакан, лучшие уровни, показатели и доступный период:
+
+```sh
+grpcurl -plaintext -import-path proto -proto market.proto -d '{"symbol":"BTC-USDT"}' localhost:50051 market.v1.MarketData/GetLatest
+grpcurl -plaintext -import-path proto -proto market.proto -d '{"symbol":"BTC-USDT","levels":1}' localhost:50051 market.v1.MarketData/GetDepth
+grpcurl -plaintext -import-path proto -proto market.proto -d '{"symbol":"BTC-USDT"}' localhost:50051 market.v1.MarketData/GetSummary
+grpcurl -plaintext -import-path proto -proto market.proto -d '{"symbol":"BTC-USDT"}' localhost:50051 market.v1.MarketData/GetRange
+```
+
+После загрузки в базе будет три снимка `BTC-USDT`. Если отправить тот же файл ещё раз, при чтении по прежнему вернутся три снимка.
+
+История стакана и mid price:
+
+```sh
+grpcurl -plaintext -import-path proto -proto market.proto -d '{"symbol":"BTC-USDT","fromMs":"1791540000000","toMs":"1791540003000","limit":100}' localhost:50051 market.v1.MarketData/GetSnapshots
+grpcurl -plaintext -import-path proto -proto market.proto -d '{"symbol":"BTC-USDT","fromMs":"1791540000000","toMs":"1791540003000","limit":100}' localhost:50051 market.v1.MarketData/GetMidPrices
+```
+
+После загрузки примера откройте [график BTC-USDT](http://localhost:3000/v1/plot/BTC-USDT?from_ms=1791540000000&to_ms=1791540003000). Для проверки базы через HTTP откройте [health](http://localhost:3000/health).
+
