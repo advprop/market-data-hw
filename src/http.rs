@@ -1,10 +1,10 @@
-use crate::{AppState, pb, validate_range};
+use crate::{AppState, MAX_DEPTH, pb, summary, validate_range};
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
-    http::{HeaderValue, Method, StatusCode, header},
+    extract::{DefaultBodyLimit, Path, Query, State},
+    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use serde::Deserialize;
 use std::{fmt::Write, sync::Arc, time::Duration};
@@ -34,6 +34,7 @@ impl IntoResponse for HttpError {
             Code::NotFound => StatusCode::NOT_FOUND,
             Code::ResourceExhausted => StatusCode::TOO_MANY_REQUESTS,
             Code::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            Code::Unauthenticated => StatusCode::UNAUTHORIZED,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, Json(serde_json::json!({"error": self.0.message()}))).into_response()
@@ -43,12 +44,24 @@ impl IntoResponse for HttpError {
 pub fn router(state: Arc<AppState>, origin: HeaderValue) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/v1/symbols", get(symbols))
+        .route("/v1/snapshots", post(ingest))
+        .route("/v1/book/{symbol}", get(book))
+        .route("/v1/summary/{symbol}", get(metrics))
+        .route("/v1/range/{symbol}", get(coverage))
+        .route("/v1/history/{symbol}", get(history))
+        .route("/v1/mid-prices/{symbol}", get(mid_prices))
         .route("/v1/plot/{symbol}", get(plot))
+        .layer(DefaultBodyLimit::max(1_048_576))
         .with_state(state)
         .layer(
             CorsLayer::new()
                 .allow_origin(origin)
-                .allow_methods([Method::GET]),
+                .allow_methods([Method::GET, Method::POST])
+                .allow_headers([
+                    header::CONTENT_TYPE,
+                    axum::http::HeaderName::from_static("x-write-token"),
+                ]),
         )
         .layer(ConcurrencyLimitLayer::new(32))
         .layer(TimeoutLayer::with_status_code(
@@ -56,6 +69,86 @@ pub fn router(state: Arc<AppState>, origin: HeaderValue) -> Router {
             Duration::from_secs(10),
         ))
         .layer(TraceLayer::new_for_http())
+}
+
+async fn symbols(State(state): State<Arc<AppState>>) -> Result<Json<pb::SymbolsReply>, HttpError> {
+    Ok(Json(pb::SymbolsReply {
+        symbols: state.symbols().await?,
+    }))
+}
+
+async fn ingest(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<pb::IngestRequest>,
+) -> Result<Json<pb::IngestReply>, HttpError> {
+    state.authorize(headers.get("x-write-token").and_then(|v| v.to_str().ok()))?;
+    Ok(Json(pb::IngestReply {
+        accepted: state.ingest(request.snapshots).await?,
+    }))
+}
+
+#[derive(Deserialize)]
+struct DepthQuery {
+    levels: Option<usize>,
+}
+
+async fn book(
+    State(state): State<Arc<AppState>>,
+    Path(symbol): Path<String>,
+    Query(query): Query<DepthQuery>,
+) -> Result<Json<pb::Snapshot>, HttpError> {
+    let levels = query.levels.map_or(MAX_DEPTH, |v| v);
+    if levels == 0 || levels > MAX_DEPTH {
+        return Err(Status::invalid_argument("levels must be in 1..100").into());
+    }
+    let mut snapshot = state.latest(&symbol).await?;
+    snapshot.bids.truncate(levels);
+    snapshot.asks.truncate(levels);
+    Ok(Json(snapshot.into()))
+}
+
+async fn metrics(
+    State(state): State<Arc<AppState>>,
+    Path(symbol): Path<String>,
+) -> Result<Json<pb::SummaryReply>, HttpError> {
+    Ok(Json(summary(&state.latest(&symbol).await?)?))
+}
+
+async fn coverage(
+    State(state): State<Arc<AppState>>,
+    Path(symbol): Path<String>,
+) -> Result<Json<pb::RangeReply>, HttpError> {
+    Ok(Json(state.range(&symbol).await?))
+}
+
+fn range_request(symbol: String, query: PlotQuery) -> pb::RangeRequest {
+    pb::RangeRequest {
+        symbol,
+        from_ms: query.from_ms,
+        to_ms: query.to_ms,
+        limit: query.limit.map_or(0, |v| v),
+    }
+}
+
+async fn history(
+    State(state): State<Arc<AppState>>,
+    Path(symbol): Path<String>,
+    Query(query): Query<PlotQuery>,
+) -> Result<Json<pb::SnapshotsReply>, HttpError> {
+    let (rows, truncated) = state.snapshots(&range_request(symbol, query)).await?;
+    Ok(Json(pb::SnapshotsReply {
+        snapshots: rows.into_iter().map(Into::into).collect(),
+        truncated,
+    }))
+}
+
+async fn mid_prices(
+    State(state): State<Arc<AppState>>,
+    Path(symbol): Path<String>,
+    Query(query): Query<PlotQuery>,
+) -> Result<Json<pb::MidPricesReply>, HttpError> {
+    Ok(Json(state.mid_prices(&range_request(symbol, query)).await?))
 }
 
 async fn health(State(state): State<Arc<AppState>>) -> Result<Json<serde_json::Value>, HttpError> {

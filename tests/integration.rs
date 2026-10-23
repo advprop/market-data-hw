@@ -215,6 +215,135 @@ async fn all_requirements_over_grpc_and_http() -> TestResult {
         app.clone().oneshot(request).await?.status(),
         StatusCode::TOO_MANY_REQUESTS
     );
+    for path in [
+        "/v1/symbols".to_owned(),
+        format!("/v1/book/{symbol}?levels=1"),
+        format!("/v1/summary/{symbol}"),
+        format!("/v1/range/{symbol}"),
+        format!("/v1/history/{symbol}?from_ms=1000&to_ms=2001&limit=1"),
+        format!("/v1/mid-prices/{symbol}?from_ms=1000&to_ms=2001"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(HttpRequest::builder().uri(&path).body(Body::empty())?)
+            .await?;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let body: serde_json::Value =
+            serde_json::from_slice(&to_bytes(response.into_body(), 1_048_576).await?)?;
+        if path.contains("/book/") {
+            assert_eq!(body["bids"].as_array().map(Vec::len), Some(1));
+            assert_eq!(body["bids"][0]["price"], "100000000");
+            assert_eq!(body["sequence"], "2");
+        }
+        if path.contains("/history/") {
+            assert_eq!(body["truncated"], true);
+        }
+        if path.contains("/summary/") {
+            assert_eq!(body["midPrice"], 100.5);
+        }
+    }
+    let precise = book(&symbol, 3000, u64::MAX);
+    let payload = serde_json::to_string(&pb::IngestRequest {
+        snapshots: vec![precise],
+    })?;
+    for (token, expected) in [
+        ("wrong-token", StatusCode::UNAUTHORIZED),
+        (TOKEN, StatusCode::OK),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                HttpRequest::builder()
+                    .method("POST")
+                    .uri("/v1/snapshots")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header("x-write-token", token)
+                    .body(Body::from(payload.clone()))?,
+            )
+            .await?;
+        assert_eq!(response.status(), expected);
+    }
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .uri(format!("/v1/book/{symbol}"))
+                .body(Body::empty())?,
+        )
+        .await?;
+    let body: serde_json::Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), 1_048_576).await?)?;
+    assert_eq!(body["sequence"], u64::MAX.to_string());
+    assert_eq!(
+        client
+            .get_latest(pb::SymbolRequest {
+                symbol: symbol.clone()
+            })
+            .await?
+            .into_inner()
+            .sequence,
+        u64::MAX
+    );
+    for (path, status) in [
+        (
+            format!("/v1/book/{symbol}?levels=0"),
+            StatusCode::BAD_REQUEST,
+        ),
+        (
+            format!("/v1/history/{symbol}?from_ms=2000&to_ms=1000"),
+            StatusCode::BAD_REQUEST,
+        ),
+        ("/v1/book/UNKNOWN-TEST".into(), StatusCode::NOT_FOUND),
+    ] {
+        assert_eq!(
+            app.clone()
+                .oneshot(HttpRequest::builder().uri(path).body(Body::empty())?)
+                .await?
+                .status(),
+            status
+        );
+    }
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("POST")
+                .uri("/v1/snapshots")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header("x-write-token", TOKEN)
+                .body(Body::from(" ".repeat(1_048_577)))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    let response = app
+        .clone()
+        .oneshot(
+            HttpRequest::builder()
+                .method("OPTIONS")
+                .uri("/v1/snapshots")
+                .header(header::ORIGIN, "http://localhost:5173")
+                .header(header::ACCESS_CONTROL_REQUEST_METHOD, "POST")
+                .header(
+                    header::ACCESS_CONTROL_REQUEST_HEADERS,
+                    "content-type,x-write-token",
+                )
+                .body(Body::empty())?,
+        )
+        .await?;
+    assert_eq!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|v| v.to_str().ok()),
+        Some("http://localhost:5173")
+    );
+    assert!(
+        response
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_METHODS)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.contains("POST"))
+    );
     let request = HttpRequest::builder()
         .uri("/health")
         .header(header::ORIGIN, "http://localhost:5173")

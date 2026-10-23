@@ -6,6 +6,7 @@ use tonic::Status;
 
 pub mod grpc;
 pub mod http;
+pub mod wire;
 pub mod pb {
     tonic::include_proto!("market.v1");
 }
